@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Job Runner</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+      html, body { height: 100%; margin: 0; }
+      body { display: grid; place-items: center; background: #0b0f1a; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica Neue, Arial, "Apple Color Emoji", "Segoe UI Emoji"; color: #e8eefc; }
+      .card { width: min(900px, 92vw); background: #101826; padding: 28px; border-radius: 18px; box-shadow: 0 10px 30px rgba(0,0,0,.35); }
+      h1 { margin: 0 0 16px; font-size: 28px; letter-spacing: .3px; }
+      form { display: grid; gap: 12px; }
+      textarea { width: 97%; resize: vertical; min-height: 220px; font-size: 16px; padding: 12px; border-radius: 10px; border: 1px solid #24314a; background: #0e1523; color: #e8eefc; outline: none; }
+      textarea:focus { border-color: #4d7cff; }
+      button { height: 48px; font-size: 16px; border: 0; border-radius: 10px; background: #4d7cff; color: white; cursor: pointer; }
+      button:disabled { opacity: .6; cursor: not-allowed; }
+      .status { margin-top: 16px; padding-top: 14px; border-top: 1px solid #24314a; display: grid; gap: 6px; }
+      .row { display: flex; gap: 8px; align-items: baseline; }
+      .label { opacity: .8; }
+      .value { font-weight: 600; }
+      .meta { display: flex; gap: 16px; opacity: .75; font-size: 12px; flex-wrap: wrap; }
+      .error { color: #ffb4b4; }
+      .hidden { display: none !important; }
+      .link a { color: #8ab4ff; text-decoration: none; }
+      .link a:hover { text-decoration: underline; }
+      .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
+      .select-row { display: grid; }
+      .select {
+        height: 48px;
+        font-size: 16px;
+        padding: 0 12px;
+        border-radius: 10px;
+        border: 1px solid #24314a;
+        background: #0e1523;
+        color: #e8eefc;
+        outline: none;
+        appearance: none;
+      }
+      .select:focus { border-color: #4d7cff; }
+
+      /* Backdrop that covers the form while processing */
+      .backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0,0,0,0.65);
+        display: grid;
+        place-items: center;
+        z-index: 999;
+      }
+      .backdrop-box {
+        min-width: min(520px, 92vw);
+        max-width: 92vw;
+        background: #000; /* black box */
+        color: #e8eefc;
+        border-radius: 14px;
+        padding: 24px 20px;
+        box-shadow: 0 10px 30px rgba(0,0,0,.6);
+        text-align: center;
+        display: grid;
+        gap: 10px;
+      }
+      .backdrop-status {
+        font-weight: 700;
+        font-size: 18px;
+        letter-spacing: .3px;
+      }
+      .spinner {
+        width: 28px; height: 28px;
+        border: 3px solid rgba(255,255,255,.25);
+        border-top-color: #4d7cff;
+        border-radius: 50%;
+        margin: 0 auto 6px;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+
+      /* Inline form hint under the button */
+      .hint { font-size: 13px; opacity: .8; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>🗿 Agent UI</h1>
+      <p style="margin-top: 0; margin-bottom: 10px;">
+        <b>Before to use this tool read carefully!</b>
+      </p>
+      <p style="margin-top: 0; margin-bottom: 10px;">
+        This tool is not a chat:
+      </p>
+      <p style="margin-top: 0; margin-bottom: 10px;">
+        - Will require the project requirements for the software to be produced in input
+      </p>
+      <p style="margin-top: 0; margin-bottom: 10px;">
+        - Will return a zip file with the developed project
+      </p>
+      <p style="margin-top: 0; margin-bottom: 16px;">
+        - Once started a completion leat it finish: the backend is pretty resilient against a number of failures.
+      </p>
+      <form id="job-form" novalidate>
+        <label for="input" class="sr-only">Input</label>
+        <div class="select-row">
+            <label for="model" class="sr-only">Model</label>
+            <select id="model" class="select" aria-required="true">
+              <option value="" selected disabled>Select a model…</option>
+              <option value="gemini-2.5-flash-lite">gemini-2.5-flash-lite</option>
+            </select>
+        </div>
+        <textarea id="input" placeholder="Paste your development specs here..." aria-required="true"></textarea>
+        <button id="submit-btn" type="submit">Submit</button>
+        <div id="form-error" class="error hidden" role="alert" aria-live="assertive"></div>
+        <div class="hint">Both fields are required.</div>
+      </form>
+
+      <!-- Status section is hidden until COMPLETED -->
+      <div id="status" class="status hidden" aria-live="polite">
+        <div class="row">
+          <span class="label">Status:</span>
+          <span id="status-value" class="value">—</span>
+        </div>
+
+        <div id="error" class="error hidden" role="alert"></div>
+
+        <div id="result" class="link hidden">
+          <a id="result-link" href="#" target="_blank" rel="noopener noreferrer">Download result</a>
+        </div>
+
+        <div class="meta">
+          <span>Job ID: <span id="job-id">—</span></span>
+          <span>Created: <span id="created-at">—</span></span>
+          <span>Updated: <span id="updated-at">—</span></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Backdrop overlay (hidden by default) -->
+    <div id="backdrop" class="backdrop hidden" aria-live="polite" aria-modal="true" role="dialog">
+      <div class="backdrop-box">
+        <div class="spinner" aria-hidden="true"></div>
+        <div class="backdrop-status" id="backdrop-status">Starting…</div>
+        <div id="backdrop-sub" style="opacity:.8;font-size:13px;">Please wait while we process your job.</div>
+      </div>
+    </div>
+
+    <script>
+      (function () {
+        var form = document.getElementById("job-form");
+        var input = document.getElementById("input");
+        var submitBtn = document.getElementById("submit-btn");
+        var formError = document.getElementById("form-error");
+
+        var statusSection = document.getElementById("status");
+        var statusValue = document.getElementById("status-value");
+        var errorBox = document.getElementById("error");
+        var resultBox = document.getElementById("result");
+        var resultLink = document.getElementById("result-link");
+        var jobIdEl = document.getElementById("job-id");
+        var createdEl = document.getElementById("created-at");
+        var updatedEl = document.getElementById("updated-at");
+        var model = document.getElementById("model");
+
+        var backdrop = document.getElementById("backdrop");
+        var backdropStatus = document.getElementById("backdrop-status");
+
+        var pollTimerId = null;
+        var inflightController = null;
+        var currentJobId = null;
+        const API_BASE = ""; // same origin
+
+        function setDisabled(disabled) {
+          submitBtn.disabled = disabled;
+          model.disabled = disabled;
+          input.disabled = disabled;
+        }
+
+        function showError(msg) {
+          if (!msg) {
+            errorBox.classList.add("hidden");
+            errorBox.textContent = "";
+            return;
+          }
+          errorBox.textContent = String(msg);
+          errorBox.classList.remove("hidden");
+        }
+
+        function showFormError(msg) {
+          if (!msg) {
+            formError.classList.add("hidden");
+            formError.textContent = "";
+            return;
+          }
+          formError.textContent = String(msg);
+          formError.classList.remove("hidden");
+        }
+
+        function setResultLink(url) {
+          if (url && typeof url === "string" && url.trim().length > 0) {
+            resultLink.href = url;
+            resultBox.classList.remove("hidden");
+          } else {
+            resultLink.removeAttribute("href");
+            resultBox.classList.add("hidden");
+          }
+        }
+
+        function updateStatusView(data) {
+          // data: { job_id, status, result_url, error_message, created_at, updated_at }
+          jobIdEl.textContent = data.job_id ? String(data.job_id) : "—";
+          statusValue.textContent = data.status ? String(data.status) : "—";
+          createdEl.textContent = data.created_at ? String(data.created_at) : "—";
+          updatedEl.textContent = data.updated_at ? String(data.updated_at) : "—";
+          showError(data.error_message || "");
+          setResultLink(data.result_url || "");
+
+          // Update backdrop text live
+          if (data.status) {
+            backdropStatus.textContent = String(data.status);
+          }
+
+          var st = (data.status || "").toString().toUpperCase();
+          if (st === "COMPLETED" || st === "ERROR" || st === "FAILED") {
+            clearPolling();
+            hideBackdrop();
+            // ensure result link is hidden on error-ish states
+            if (st === "ERROR" || st === "FAILED") {
+              setResultLink("");
+              // Make sure we show a clear message even if server forgot error_message
+              if (!data.error_message) showError("The job ended with an error.");
+            }
+            // reveal the status section for any terminal state
+            statusSection.classList.remove("hidden");
+          }
+        }
+
+
+        function clearPolling() {
+          if (pollTimerId !== null) {
+            clearInterval(pollTimerId);
+            pollTimerId = null;
+          }
+        }
+
+        function cancelInflight() {
+          if (inflightController) {
+            try { inflightController.abort(); } catch (e) {}
+            inflightController = null;
+          }
+        }
+
+        function showBackdrop(initialText) {
+          backdropStatus.textContent = initialText || "Starting…";
+          backdrop.classList.remove("hidden");
+        }
+        function hideBackdrop() {
+          backdrop.classList.add("hidden");
+        }
+
+        function fetchJSON(url, options) {
+          // Generic GET/JSON; throws on non-OK after trying to parse JSON error payload
+          cancelInflight();
+          inflightController = new AbortController();
+          var opts = options || {};
+          opts.signal = inflightController.signal;
+          return fetch(url, opts).then(function (r) {
+            var contentType = r.headers.get("content-type") || "";
+            var tryParse = contentType.includes("application/json") ? r.json() : r.text().then(function(t){ return { raw: t }; });
+
+            if (!r.ok) {
+              return tryParse.then(function(body){
+                var msg = (body && body.error) ? body.error : ("HTTP " + r.status);
+                var err = new Error(msg);
+                err.status = r.status;
+                err.body = body;
+                throw err;
+              });
+            }
+            return tryParse;
+          });
+        }
+
+        function fetchStatus(jobId) {
+          var url = API_BASE + "/status/" + encodeURIComponent(jobId);
+          fetchJSON(url, { method: "GET" })
+            .then(function (data) {
+              // Defensive normalization
+              var normalized = {
+                job_id: data && data.job_id ? String(data.job_id) : jobId,
+                status: data && data.status ? String(data.status) : "",
+                result_url: data && data.result_url ? String(data.result_url) : "",
+                error_message: data && data.error_message ? String(data.error_message) : "",
+                created_at: data && data.created_at ? String(data.created_at) : "",
+                updated_at: data && data.updated_at ? String(data.updated_at) : ""
+              };
+              updateStatusView(normalized);
+            })
+            .catch(function (err) {
+              // Keep the backdrop but show message under it and in the section (when shown)
+              showError(err && err.message ? err.message : "Status fetch error");
+            });
+        }
+
+        function startPolling(jobId) {
+          clearPolling();
+          fetchStatus(jobId); // immediate
+          pollTimerId = setInterval(function () {
+            fetchStatus(jobId);
+          }, 3000); // faster feedback; adjust as desired
+        }
+
+        function validateForm() {
+          var t = (input.value || "").trim();
+          var jt = (model.value || "");
+          if (!jt && !t) {
+            showFormError("Select a job type and provide some text.");
+            return false;
+          }
+          if (!jt) {
+            showFormError("Select a job type.");
+            return false;
+          }
+          if (!t) {
+            showFormError("Textarea cannot be empty.");
+            return false;
+          }
+          showFormError("");
+          return true;
+        }
+
+        // Submit handling with special 503 case
+        form.addEventListener("submit", function (e) {
+          e.preventDefault();
+          showFormError("");
+          showError("");
+          setResultLink("");
+          statusSection.classList.add("hidden"); // hide status under form until COMPLETED
+          clearPolling();
+          cancelInflight();
+
+          if (!validateForm()) {
+            return; // do not submit
+          }
+
+          setDisabled(true);
+
+          var payload = {
+            text: input.value || "",
+            model: "gemini-2.5-flash-lite"
+          };
+
+          // Use fetch directly so we can branch on status code (esp. 503)
+          cancelInflight();
+          inflightController = new AbortController();
+          fetch(API_BASE + "/submit", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+            signal: inflightController.signal
+          })
+          .then(async function (r) {
+            var ct = r.headers.get("content-type") || "";
+            var body = ct.includes("application/json") ? await r.json() : {};
+            if (r.status === 503) {
+              // Worker busy -> show message on the form; do NOT start polling
+              var msg = body && body.error ? body.error : "Worker is busy";
+              var reqIdInfo = body && body.request_id ? (" (request_id: " + body.request_id + ")") : "";
+              showFormError(msg + reqIdInfo);
+              throw new Error("BUSY_503");
+            }
+            if (!r.ok) {
+              var m = (body && body.error) ? body.error : ("HTTP " + r.status);
+              throw new Error(m);
+            }
+            return body;
+          })
+          .then(function (data) {
+            var jobId = data && data.job_id ? String(data.job_id) : "";
+            if (!jobId) {
+              throw new Error("No job_id returned from /submit");
+            }
+            currentJobId = jobId;
+
+            // Show backdrop immediately; status section remains hidden until COMPLETED
+            showBackdrop("QUEUED");
+            // Prime under-form fields with job id in case we reveal later
+            jobIdEl.textContent = jobId;
+            statusValue.textContent = "—";
+            createdEl.textContent = "—";
+            updatedEl.textContent = "—";
+            setResultLink("");
+            showError("");
+
+            startPolling(jobId);
+          })
+          .catch(function (err) {
+            if (err && err.message === "BUSY_503") {
+              // already shown user-friendly message; no polling started
+              return;
+            }
+            // Generic submit error
+            showFormError(err && err.message ? err.message : "Submit error");
+          })
+          .finally(function () {
+            setDisabled(false);
+          });
+        });
+
+        // Ensure backdrop appears if we navigate away mid-poll? (we just clean up)
+        window.addEventListener("beforeunload", function () {
+          clearPolling();
+          cancelInflight();
+        });
+
+        // Optional UX: hide form-level error on input
+        input.addEventListener("input", function(){ if (!formError.classList.contains("hidden")) validateForm(); });
+        model.addEventListener("change", function(){ if (!formError.classList.contains("hidden")) validateForm(); });
+      })();
+    </script>
+  </body>
+</html>
